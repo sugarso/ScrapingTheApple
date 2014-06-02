@@ -54,18 +54,9 @@ log.debug "Scraping Start."
 #headless.start
 
 def download(source, target)
-  # Must be somedomain.net instead of somedomain.net/, otherwise, it will throw exception.
-#  Net::HTTP.start("developer.apple.com") do |http|
-#    resp = http.get("/flv/sample/sample.flv")
-#    open("sample.flv", "wb") do |file|
-#      file.write(resp.body)
-#    end
-#  end
   open(target, 'wb') do |file|
     file << open(source).read
   end
-
-#  puts "Done."
 end
 
 
@@ -153,33 +144,33 @@ source_code_documents.each_with_index do |source_code, i|
         log.warn "Fuckers! Zip name: [" + downloaded_file_name + "] Project name: [" + project_name + "]"
       end
       
-      # Use html page name here, but fuck you OK!?! (Just kidding, html name is always present)
+      # Dump the html that got us here, in case we with to recover the more details.
+      # Use html page name here, becaues why the fuck not?! (Just kidding, html name is always present)
       FileUtils.mkdir_p File.dirname(sample_html_file)
       File.write(sample_html_file, b.html)
   
-      # If we are empty on the url
+      # If we are empty on the url, mostly because apple dropped the project..
       if sample_code_download_url.to_s == ''
-        # Check to see if it's because app have decided to remove the file
+        # Check to see if it's because apple have decided to remove the file
         if b.html.include? "This document has been removed"
           log.warn "Project " + project_name + " has been removed."
         else
-          log.error "WTF!!! Can't scrpae :()" + project_name
+          log.error "WTF!!! Can't scrpae :(" + project_name
         end
       else
         download(sample_code_download_url, sample_code_file)
       end
-      # Dump the html that got us here, in case we with to recover the more details.
     end
   
     #page = Nokogiri::HTML(b.html)   
     #rel_url = source_code[9]
-    #even_numbers << number if number%2 == 0
-    #puts page
+    
+    # Finally close the browser.
     b.close
   end
 end
 
-# Cache the finished scraping job, for next execution to be super effiecient.
+# Cache the finished state of the scraping job, for next execution to be super effiecient.
 CACHE_FILE_NAME=Time.now.utc.iso8601 + "-" + md5 + ".json"
 File.write(LOCAL_CACHE_PATH + "/" + CACHE_FILE_NAME, json_feed_response)
 log.debug "Scraping Done."
