@@ -16,7 +16,7 @@ require 'fileutils'
 #### CONFIG
 
 ROOT = "/Users/maximveksler/Desktop/apple_source_code_download"
-FOR_PLATFORM='Mac'
+FOR_PLATFORM='iOS' # Then switch to Mac
 HOME_PATH = ROOT + "/" + FOR_PLATFORM
 LOCAL_CACHE_PATH = HOME_PATH + "/" + ".weed"
 
