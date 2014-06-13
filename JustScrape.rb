@@ -67,110 +67,109 @@ md5 = Digest::MD5.hexdigest(json_feed_response)
 # I'm not responsible for all the bugs in the world. WE TRUST THE FEED.
 if Dir[File.join(LOCAL_CACHE_PATH, '*' + md5 + '*.json')].any?
   log.debug "Super Fast Short Circut. Exiting with love."
-  exit
-end
-
-parsed = JSON.parse(json_feed_response)
-
-source_code_documents = parsed["documents"].select {|document| document[2] == 5 } # 5 is "name": "Sample Code",
-source_code_documents.each_with_index do |source_code, i|
-  project_name = source_code[0]
-  change_date = source_code[3]
-  sample_code_project_home = HOME_PATH + "/" + project_name
-  sample_code_project_current = sample_code_project_home + "/" + change_date
-
-  # Shortcircut, if the zip is there, we do not redownload it.
-  if Dir[File.join(sample_code_project_current, '*.zip')].empty? == true
-    #https://developer.apple.com/library/ios/samplecode/sc1249/MotionEffects.zip
-    #https://developer.apple.com/library/ios/samplecode/Tabster/Tabster.zip
-    #https://developer.apple.com/library/ios/samplecode/CryptoExercise/CryptoExercise.zip
-    #https://developer.apple.com/library/ios/samplecode/ZoomingPDFViewer/ZoomingPDFViewer.zip
-
-  #      [
-  #          "MotionEffects",
-  #          "DTS40014521",
-  #          5,
-  #          "2014-05-14",
-  #          0,
-  #          2470,
-  #          2420,
-  #          133,
-  #          0,
-  #          "../samplecode/sc1249/Introduction/Intro.html#//apple_ref/doc/uid/DTS40014521",
-  #          0,
-  #          "2014-05-14"
-  #      ],
-  #
-  #
-  #"columns": {
-  #      "name": 0,
-  #      "id": 1,
-  #      "type": 2,
-  #      "date": 3,
-  #      "updateSize": 4,
-  #      "topic": 5,
-  #      "framework": 6,
-  #      "release": 7,
-  #      "subtopic": 8,
-  #      "url": 9,
-  #      "sortOrder": 10,
-  #      "displayDate": 11
-  #  },
-  #
-    b = Watir::Browser.new
-    b.goto("https://developer.apple.com/library/" + FOR_PLATFORM.downcase + "/navigation/" + source_code[9])
-    # Block until page fully loaded.
-    while (b.li(:id, 'toc_button').when_present.style "display" == "none") == true
-    end
+else
+  parsed = JSON.parse(json_feed_response)
   
-    #puts b.li(:id, 'toc_button').when_present.style "display" #block until stupid apple JS is loaded.
-    sample_code_download_url = b.link(:id, 'Sample_link').href
-    downloaded_file_name = File.basename(URI.parse(sample_code_download_url).path)
-    
-    sample_code_file = sample_code_project_current + "/" + downloaded_file_name
-    sample_html_file = sample_code_project_current + "/" + "page.html"
-    
-    if ! File.file?(sample_code_file)
-      
-      puts "Position = " + i.to_s + "/#{source_code_documents.length}"
-      # If the directory exits, but the date is not this means we got (hopefully) a new date, yay!
-      if File.exist?(sample_code_project_home)
-        log.info "Good news everyone! Project Update: " + project_name + "/" + change_date + "/" + downloaded_file_name
-      else
-        log.info "Great news everyone! New Project: " + project_name + "/" + change_date + "/" + downloaded_file_name
-      end
-      
-      if downloaded_file_name != (project_name + ".zip")
-        log.warn "Fuckers! Zip name: [" + downloaded_file_name + "] Project name: [" + project_name + "]"
-      end
-      
-      # Dump the html that got us here, in case we with to recover the more details.
-      # Use html page name here, becaues why the fuck not?! (Just kidding, html name is always present)
-      FileUtils.mkdir_p File.dirname(sample_html_file)
-      File.write(sample_html_file, b.html)
+  source_code_documents = parsed["documents"].select {|document| document[2] == 5 } # 5 is "name": "Sample Code",
+  source_code_documents.each_with_index do |source_code, i|
+    project_name = source_code[0]
+    change_date = source_code[3]
+    sample_code_project_home = HOME_PATH + "/" + project_name
+    sample_code_project_current = sample_code_project_home + "/" + change_date
   
-      # If we are empty on the url, mostly because apple dropped the project..
-      if sample_code_download_url.to_s == ''
-        # Check to see if it's because apple have decided to remove the file
-        if b.html.include? "This document has been removed"
-          log.warn "Project " + project_name + " has been removed."
+    # Shortcircut, if the zip is there, we do not redownload it.
+    if Dir[File.join(sample_code_project_current, '*.zip')].empty? == true
+      #https://developer.apple.com/library/ios/samplecode/sc1249/MotionEffects.zip
+      #https://developer.apple.com/library/ios/samplecode/Tabster/Tabster.zip
+      #https://developer.apple.com/library/ios/samplecode/CryptoExercise/CryptoExercise.zip
+      #https://developer.apple.com/library/ios/samplecode/ZoomingPDFViewer/ZoomingPDFViewer.zip
+  
+    #      [
+    #          "MotionEffects",
+    #          "DTS40014521",
+    #          5,
+    #          "2014-05-14",
+    #          0,
+    #          2470,
+    #          2420,
+    #          133,
+    #          0,
+    #          "../samplecode/sc1249/Introduction/Intro.html#//apple_ref/doc/uid/DTS40014521",
+    #          0,
+    #          "2014-05-14"
+    #      ],
+    #
+    #
+    #"columns": {
+    #      "name": 0,
+    #      "id": 1,
+    #      "type": 2,
+    #      "date": 3,
+    #      "updateSize": 4,
+    #      "topic": 5,
+    #      "framework": 6,
+    #      "release": 7,
+    #      "subtopic": 8,
+    #      "url": 9,
+    #      "sortOrder": 10,
+    #      "displayDate": 11
+    #  },
+    #
+      b = Watir::Browser.new
+      b.goto("https://developer.apple.com/library/" + FOR_PLATFORM.downcase + "/navigation/" + source_code[9])
+      # Block until page fully loaded.
+      while (b.li(:id, 'toc_button').when_present.style "display" == "none") == true
+      end
+    
+      #puts b.li(:id, 'toc_button').when_present.style "display" #block until stupid apple JS is loaded.
+      sample_code_download_url = b.link(:id, 'Sample_link').href
+      downloaded_file_name = File.basename(URI.parse(sample_code_download_url).path)
+      
+      sample_code_file = sample_code_project_current + "/" + downloaded_file_name
+      sample_html_file = sample_code_project_current + "/" + "page.html"
+      
+      if ! File.file?(sample_code_file)
+        
+        puts "Position = " + i.to_s + "/#{source_code_documents.length}"
+        # If the directory exits, but the date is not this means we got (hopefully) a new date, yay!
+        if File.exist?(sample_code_project_home)
+          log.info "Good news everyone! Project Update: " + project_name + "/" + change_date + "/" + downloaded_file_name
         else
-          log.error "WTF!!! Can't scrpae :(" + project_name
+          log.info "Great news everyone! New Project: " + project_name + "/" + change_date + "/" + downloaded_file_name
         end
-      else
-        download(sample_code_download_url, sample_code_file)
-      end
-    end
-  
-    #page = Nokogiri::HTML(b.html)   
-    #rel_url = source_code[9]
+        
+        if downloaded_file_name != (project_name + ".zip")
+          log.warn "Fuckers! Zip name: [" + downloaded_file_name + "] Project name: [" + project_name + "]"
+        end
+        
+        # Dump the html that got us here, in case we with to recover the more details.
+        # Use html page name here, becaues why the fuck not?! (Just kidding, html name is always present)
+        FileUtils.mkdir_p File.dirname(sample_html_file)
+        File.write(sample_html_file, b.html)
     
-    # Finally close the browser.
-    b.close
+        # If we are empty on the url, mostly because apple dropped the project..
+        if sample_code_download_url.to_s == ''
+          # Check to see if it's because apple have decided to remove the file
+          if b.html.include? "This document has been removed"
+            log.warn "Project " + project_name + " has been removed."
+          else
+            log.error "WTF!!! Can't scrpae :(" + project_name
+          end
+        else
+          download(sample_code_download_url, sample_code_file)
+        end
+      end
+    
+      #page = Nokogiri::HTML(b.html)   
+      #rel_url = source_code[9]
+      
+      # Finally close the browser.
+      b.close
+    end
   end
+  
+  # Cache the finished state of the scraping job, for next execution to be super effiecient.
+  CACHE_FILE_NAME=Time.now.utc.iso8601 + "-" + md5 + ".json"
+  File.write(LOCAL_CACHE_PATH + "/" + CACHE_FILE_NAME, json_feed_response)
+  log.debug "Scraping Done."
 end
-
-# Cache the finished state of the scraping job, for next execution to be super effiecient.
-CACHE_FILE_NAME=Time.now.utc.iso8601 + "-" + md5 + ".json"
-File.write(LOCAL_CACHE_PATH + "/" + CACHE_FILE_NAME, json_feed_response)
-log.debug "Scraping Done."
