@@ -1,5 +1,7 @@
 #!/usr/bin/env ruby
 
+# ScrapeThemAll
+
 require "rubygems"
 require 'restclient'
 require "json"
@@ -17,7 +19,7 @@ require 'logger'
 #### CONFIG
 
 ROOT = "/Users/maximveksler/Desktop/apple_source_code_download"
-FOR_PLATFORM='iOS' # Then switch to Mac
+FOR_PLATFORM='Mac' # Then switch to Mac
 HOME_PATH = ROOT + "/" + FOR_PLATFORM
 LOCAL_CACHE_PATH = HOME_PATH + "/" + ".weed"
 
@@ -46,6 +48,7 @@ end
 
 FileUtils.mkdir_p LOCAL_CACHE_PATH
 log_file = File.open(LOCAL_CACHE_PATH + "/shutup.log", "a")
+# noinspection RubyArgCount
 log = Logger.new MultiDelegator.delegate(:write, :close).to(STDOUT, log_file)
 
 ##### Helpers
@@ -63,32 +66,20 @@ log.debug "Scraping Start."
 
 json_feed_response = RestClient.get(URL)
 md5 = Digest::MD5.hexdigest(json_feed_response)
+signature_search_pattern = File.join(LOCAL_CACHE_PATH, '*' + md5 + '*.json')
 
-if Dir[File.join(LOCAL_CACHE_PATH, '*' + md5 + '*.json')].any?
+if Dir[signature_search_pattern].any?
   # IN FEED WE TRUST
-  # Super Short Circut, check if apple haven't changed the feed. If they didn't then fuck me if something changes without updating the json,
+  # Super Short Circuit, check if apple haven't changed the feed. If they didn't then fuck me if something changes without updating the json,
   # I'm not responsible for all the bugs in the world. 
-  log.debug "Super Fast Short Circut. Exiting with love."
+  log.debug "Super Fast Short Circuit. Exiting with love."
+  #log.debug "Search patterns\n#{signature_search_pattern}"
 else
   # Need to scrape, do it like a madafaker.
   parsed = JSON.parse(json_feed_response)
 
+  __did_see_execution_errors = false
 
-   #"columns": {
-    #      "name": 0,
-    #      "id": 1,
-    #      "type": 2,
-    #      "date": 3,
-    #      "updateSize": 4,
-    #      "topic": 5,
-    #      "framework": 6,
-    #      "release": 7,
-    #      "subtopic": 8,
-    #      "url": 9,
-    #      "sortOrder": 10,
-    #      "displayDate": 11
-    #  },
-    
   source_code_documents = parsed["documents"].select {|document| document[2] == 5 } # 5 is "name": "Sample Code",
   source_code_documents.each_with_index do |source_code, i|
     project_name = source_code[0]
@@ -126,7 +117,7 @@ else
       if ! File.file?(sample_code_file)
         # If the directory exits, but the date is not this means we got (hopefully) a new date, yay!
         if File.exist?(sample_code_project_home)
-          log.info "Good news everyone! Project Update: " + project_name + "/" + change_date + "/" + downloaded_file_name
+          log.info 'Good news everyone! Project Update: ' + project_name + '/' + change_date + "/" + downloaded_file_name
         else
           log.info "Great news everyone! New Project: " + project_name + "/" + change_date + "/" + downloaded_file_name
         end
@@ -146,11 +137,12 @@ else
         # If we are empty on the url, mostly because apple dropped the project..
         if sample_code_download_url.to_s == ''
           # Check to see if it's because apple have decided to remove the file
-          if b.html.include? "This document has been removed"
+          if (b.text.include? "This document has been removed") || (b.text.include? 'This document has been retired')
             log.warn "Project " + project_name + " has been removed."
             FileUtils.touch(sample_code_project_home_daterev_deprecated)
           else
-            log.error "WTF!!! Can't scrpae :(" + project_name
+            log.error "WTF!!! Can't scrape :(" + project_name
+            __did_see_execution_errors = true
           end
         else
           download(sample_code_download_url, sample_code_file)
@@ -164,13 +156,18 @@ else
       b.close
     end
   end
-  
-  # Cache the finished state of the scraping job, for next execution to be super effiecient.
-  CACHE_FILE_NAME=Time.now.utc.iso8601 + "-" + md5 + ".json"
-  File.write(LOCAL_CACHE_PATH + "/" + CACHE_FILE_NAME, json_feed_response)
-  log.debug "Scraping Done."
+
+  # Cache the finished state of the scraping job, for next execution to be super efficient.
+  # Only mark as "did success" if not a single error was detected.
+  CACHE_FILE_NAME = File.join(LOCAL_CACHE_PATH, Time.now.utc.iso8601 + "-" + md5 + ".json")
+  if __did_see_execution_errors
+    log.debug "Will not touch #{CACHE_FILE_NAME} as done because errors were detected during execution."
+  else
+    File.write(CACHE_FILE_NAME, json_feed_response)
+  end
 end
 
+log.debug "Scraping Done."
 
 
 
