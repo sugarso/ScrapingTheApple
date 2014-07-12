@@ -32,11 +32,12 @@ end
 
 #### Init the main class...
 class ScrapingJoy
-  def initialize(homedir, for_platform)
+  def initialize(homedir, for_platform, prerelease = false)
     @PLATFORM = for_platform
     @HOME_PATH = File.join(homedir, @PLATFORM)
     @LOCAL_CACHE_PATH = File.join(@HOME_PATH, '.weed')
-    @CODE_SOURCE_FEED_URL = 'https://developer.apple.com/library/' + @PLATFORM.downcase + '/navigation/library.json'
+    @LIBRARY = prerelease ? 'library/prerelease' : 'library'
+    @CODE_SOURCE_FEED_URL = 'https://developer.apple.com/' + @LIBRARY + '/' + @PLATFORM.downcase + '/navigation/library.json'
 
     #### Make logging happen
     FileUtils.mkdir_p @LOCAL_CACHE_PATH
@@ -77,19 +78,22 @@ class ScrapingJoy
 
     source_code_documents = parsed["documents"].select {|document| document[2] == 5 } # 5 is "name": "Sample Code",
     source_code_documents.each_with_index do |source_code, i|
-      project_name = source_code[0]
-      project_id = source_code[1]
-      project_type = source_code[2]
-      change_date = source_code[3]
-      update_size = source_code[4] # updateSize: ["First Version", "Content Update","Minor Change",""],
-      # topic = source_code[5]
-      framework = source_code[6]
-      release = source_code[7]
-      subtopic = source_code[8]
-      apple_project_url = source_code[9]
+      name = source_code[0] # "Lister: A Productivity App Built in Swift"
+      id = source_code[1] # "TP40014512"
+      type = source_code[2] # 5 { name: "Resource Types" { name: "Sample Code", id: "resourceType_5", sortOrder: "4", key: "5"}} // id is meaningless.
+      date = source_code[3] # "2014-07-01"
+      updateSize = source_code[4] # 2 { updateSize: ["First Version", "Content Update","Minor Change",""], }
+      topic = source_code[5] # 1460 { name: "Topics" { name: "Languages &amp; Utilities", id: 2275, key: "1460" }} // id is meaningless.
+      framework = source_code[6] # 2420 { name: "Frameworks" {name: "UIKit", id: 2213, parent: 490, key: "2420"}} // id is meaningless.
+                                 # Parent: {name: "Cocoa Touch Layer", id: 2215, key: "490"} // Parent is not displayed in the HTML page apple is rending for the project
+      release = source_code[7] # 157 // DON'T KNOW WHAT THIS IS ??
+      subtopic = source_code[8] # 2303 { name: "Topics" { name: "Swift", id: 2325, parent: 1460, key: "2303" }} // Parent is topic (field above)
+      url = source_code[9] # "../samplecode/Lister-Swift/Introduction/Intro.html#//apple_ref/doc/uid/TP40014512"
+      sortOrder = source_code[10] # 0
+      displayDate = source_code[11] # "2014-07-01"
 
-      sample_code_project_home = File.join(@HOME_PATH, project_name)
-      sample_code_project_home_daterev = File.join(sample_code_project_home, change_date)
+      sample_code_project_home = File.join(@HOME_PATH, name)
+      sample_code_project_home_daterev = File.join(sample_code_project_home, date)
       sample_code_project_home_daterev_deprecated = File.join(sample_code_project_home_daterev, '.deprecated')
 
       # Shortcircut, if the zip is there, we do not redownload it.
@@ -98,7 +102,7 @@ class ScrapingJoy
         puts 'Position = ' + i.to_s + "/#{source_code_documents.length}"
 
         b = Watir::Browser.new
-        b.goto('https://developer.apple.com/library/' + @PLATFORM.downcase + '/navigation/' + apple_project_url)
+        b.goto('https://developer.apple.com/' + @LIBRARY + '/' + @PLATFORM.downcase + '/navigation/' + url)
         # Block until page fully loaded.
         while (b.li(:id, 'toc_button').when_present.style 'display' == 'none') == true
         end
@@ -113,9 +117,9 @@ class ScrapingJoy
         if ! File.file?(sample_code_file)
           # If the directory exits, but the date is not this means we got (hopefully) a new date, yay!
           if File.exist?(sample_code_project_home)
-            @log.info 'Good news everyone! Project Update: ' + File.join(project_name, change_date, downloaded_file_name)
+            @log.info 'Good news everyone! Project Update: ' + File.join(name, date, downloaded_file_name)
           else
-            @log.info 'Great news everyone! New Project: ' + File.join(project_name, change_date, downloaded_file_name)
+            @log.info 'Great news everyone! New Project: ' + File.join(name, date, downloaded_file_name)
           end
 
           # Create home directories.
@@ -125,8 +129,8 @@ class ScrapingJoy
           # Use html page name here, becaues why the fuck not?! (Just kidding, html name is always present)
           File.write(sample_html_file, b.html)
 
-          if downloaded_file_name != (project_name + '.zip')
-            @log.warn 'Fuckers! Zip name: [' + downloaded_file_name + '] Project name: [' + project_name + ']'
+          if downloaded_file_name != (name + '.zip')
+            @log.warn 'Fuckers! Zip name: [' + downloaded_file_name + '] Project name: [' + name + ']'
           end
 
 
@@ -134,10 +138,10 @@ class ScrapingJoy
           if sample_code_download_url.to_s == ''
             # Check to see if it's because apple have decided to remove the file
             if (b.text.include? 'This document has been removed') || (b.text.include? 'This document has been retired')
-              @log.warn "Project #{project_name} has been removed."
+              @log.warn "Project #{name} has been removed."
               FileUtils.touch(sample_code_project_home_daterev_deprecated)
             else
-              @log.error "WTF!!! Can't scrape :( #{project_name}"
+              @log.error "WTF!!! Can't scrape :( #{name}"
               __did_see_execution_errors = true
             end
           else
