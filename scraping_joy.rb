@@ -1,6 +1,6 @@
-require "rubygems"
-require 'restclient'
-require "json"
+require 'rubygems'
+require 'rest_client'
+require 'json'
 require 'net/http'
 require 'open-uri'
 require 'nokogiri'
