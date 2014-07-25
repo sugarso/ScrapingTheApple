@@ -47,14 +47,17 @@ class ScrapingJoy
   end
 
   def scrape
-    @log.debug "Scraping for #{@PLATFORM}."
+    @log.debug "Scraping for #{@LIBRARY} of #{@PLATFORM}."
 
     #headless = Headless.new
     #headless.start
 
+    @log.debug "Reading source #{@CODE_SOURCE_FEED_URL}"
     # Download the feed, and md5sum it's content
     json_feed_response = RestClient.get(@CODE_SOURCE_FEED_URL)
     @md5 = Digest::MD5.hexdigest(json_feed_response)
+
+	# Compose search pattern for exiting feed json response
     signature_search_pattern = File.join(@LOCAL_CACHE_PATH, '*' + @md5 + '*.json')
 
     if Dir[signature_search_pattern].any?
@@ -96,26 +99,35 @@ class ScrapingJoy
       sample_code_project_home_daterev = File.join(sample_code_project_home, date)
       sample_code_project_home_daterev_deprecated = File.join(sample_code_project_home_daterev, '.deprecated')
 
-      # Shortcircut, if the zip is there, we do not redownload it.
-      if Dir[File.join(sample_code_project_home_daterev, '*.zip')].empty? == true && Dir[sample_code_project_home_daterev_deprecated].empty? == true
+	  # Shortcircut, if the zip is there, we do not redownload it.
+	  # if the project is deprecated do not redownload as well.
+	  scraped = Dir[File.join(sample_code_project_home_daterev, '*.zip')].any? ||   Dir[sample_code_project_home_daterev_deprecated].any?
+      
+      if not scraped
         # just stdout, no logging.
         puts 'Position = ' + i.to_s + "/#{source_code_documents.length}"
 
-        b = Watir::Browser.new
-        b.goto('https://developer.apple.com/' + @LIBRARY + '/' + @PLATFORM.downcase + '/navigation/' + url)
-        # Block until page fully loaded.
-        while (b.li(:id, 'toc_button').when_present.style 'display' == 'none') == true
-        end
-
+		begin
+	        b = Watir::Browser.new
+	        b.goto('https://developer.apple.com/' + @LIBRARY + '/' + @PLATFORM.downcase + '/navigation/' + url)
+	        # Block until page fully loaded. Not sure how this integrated Until
+	        while (b.li(:id, 'toc_button').when_present.style 'display' == 'none') == true
+	        end
+		rescue Watir::Wait::TimeoutError
+			@log.error 'Error while waiting for page load. Leaving the website open for debug.'
+			__did_see_execution_errors = true
+			next
+		end
+		
         sample_code_download_url = b.link(:id, 'Sample_link').href
-        # https://developer.apple.com/library/ios/samplecode/sc1249/MotionEffects.zip -> MotionEffects.zip
+        # for ex. https://developer.apple.com/library/ios/samplecode/sc1249/MotionEffects.zip -> MotionEffects.zip
         downloaded_file_name = File.basename(URI.parse(sample_code_download_url).path)
 
         sample_code_file = File.join(sample_code_project_home_daterev, downloaded_file_name)
         sample_html_file = File.join(sample_code_project_home_daterev, 'page.html')
 
         if ! File.file?(sample_code_file)
-          # If the directory exits, but the date is not this means we got (hopefully) a new date, yay!
+          # If  directory exits, but DATE is not that means we got update for known project project, yay!
           if File.exist?(sample_code_project_home)
             @log.info 'Good news everyone! Project Update: ' + File.join(name, date, downloaded_file_name)
           else
@@ -161,7 +173,7 @@ class ScrapingJoy
     # Only mark as "did success" if not a single error was detected.
     @CACHE_FILE_NAME = File.join(@LOCAL_CACHE_PATH, Time.now.utc.iso8601 + "-" + @md5 + ".json")
     if __did_see_execution_errors
-      @log.debug "Will not touch #{@CACHE_FILE_NAME} as done because errors were detected during execution."
+      @log.debug "Will not mark #{@CACHE_FILE_NAME} as done, errors were detected during execution."
     else
       File.write(@CACHE_FILE_NAME, json_feed_response)
     end
