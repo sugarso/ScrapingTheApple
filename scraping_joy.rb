@@ -46,6 +46,38 @@ class ScrapingJoy
     @log = Logger.new MultiDelegator.delegate(:write, :close).to(STDOUT, log_file)
   end
 
+  def attempt_booklike_page_download(browser)
+    _is_deprecated = false
+
+    begin
+      # Block until page fully loaded. Not sure how this integrated Until
+      # This will Watir::Wait::TimeoutError if too much time has passed. Cool right.. :)
+      while (browser.li(:id, 'toc_button').when_present.style 'display' == 'none') == true
+      end
+
+      sample_code_download_url = browser.link(:id, 'Sample_link').href
+      # for ex. https://developer.apple.com/library/ios/samplecode/sc1249/MotionEffects.zip -> MotionEffects.zip
+
+      if (browser.text.include? 'This document has been removed') || (browser.text.include? 'This document has been retired')
+        _is_deprecated = true
+      end
+
+      return true, _is_deprecated, browser.html, sample_code_download_url
+    rescue Watir::Wait::TimeoutError
+      @log.error 'Error while waiting for page load. Leaving the website open for debug.'
+
+      # begin
+      #   require 'pry'
+      #   binding.pry
+      # rescue LoadError
+      #   puts "Not loading pry"
+      #   # Silent ingore debugger breakpoint if not ruby -r pry module was loaded.
+      # end
+
+      return false # success = false
+    end
+  end
+
   def scrape
     @log.debug "Scraping for #{@LIBRARY} of #{@PLATFORM}."
 
@@ -74,10 +106,11 @@ class ScrapingJoy
   end
 
   def runScrapeJobsFromFeed(json_feed_response)
+    __did_see_execution_errors = false
     # Need to scrape, do it like a madafaker.
     parsed = JSON.parse(json_feed_response)
 
-    __did_see_execution_errors = false
+
 
     source_code_documents = parsed["documents"].select {|document| document[2] == 5 } # 5 is "name": "Sample Code",
     source_code_documents.each_with_index do |source_code, i|
@@ -99,39 +132,43 @@ class ScrapingJoy
       sample_code_project_home_daterev = File.join(sample_code_project_home, date)
       sample_code_project_home_daterev_deprecated = File.join(sample_code_project_home_daterev, '.deprecated')
 
-	  # Shortcircut, if the zip is there, we do not redownload it.
-	  # if the project is deprecated do not redownload as well.
-	  scraped = Dir[File.join(sample_code_project_home_daterev, '*.zip')].any? ||   Dir[sample_code_project_home_daterev_deprecated].any?
+      project_resource_fullpath = "https://developer.apple.com/#{@LIBRARY}/#{@PLATFORM.downcase}/navigation/#{url}"
+  	  # Shortcircut, if the zip is there, we do not redownload it.
+  	  # if the project is deprecated do not redownload as well.
+      scraped = Dir[File.join(sample_code_project_home_daterev, '*.zip')].any? || Dir[sample_code_project_home_daterev_deprecated].any?
       
       if not scraped
         # just stdout, no logging.
-        puts 'Position = ' + i.to_s + "/#{source_code_documents.length}"
+        puts "#{i.to_s}/#{source_code_documents.length} [#{name}](#{project_resource_fullpath})"
 
-		begin
-	        b = Watir::Browser.new
-	        b.goto('https://developer.apple.com/' + @LIBRARY + '/' + @PLATFORM.downcase + '/navigation/' + url)
-	        # Block until page fully loaded. Not sure how this integrated Until
-	        while (b.li(:id, 'toc_button').when_present.style 'display' == 'none') == true
-	        end
-		rescue Watir::Wait::TimeoutError
-			@log.error 'Error while waiting for page load. Leaving the website open for debug.'
-			__did_see_execution_errors = true
-			next
-		end
-		
-        sample_code_download_url = b.link(:id, 'Sample_link').href
-        # for ex. https://developer.apple.com/library/ios/samplecode/sc1249/MotionEffects.zip -> MotionEffects.zip
-        downloaded_file_name = File.basename(URI.parse(sample_code_download_url).path)
+        # Open the page once. Then attempt your best on pulling the download from that page.
+        b = Watir::Browser.new
+        b.goto(project_resource_fullpath)
 
-        sample_code_file = File.join(sample_code_project_home_daterev, downloaded_file_name)
-        sample_html_file = File.join(sample_code_project_home_daterev, 'page.html')
+        scrape_success, _is_deprecated, html, sample_code_download_url = attempt_booklike_page_download(b)
 
-        if ! File.file?(sample_code_file)
+        # # Dick factor: From WWDC 2014 apple moved *some* of the projects to the https://developer.apple.com/wwdc/resources/sample-code/ page
+        # if not booklike_page_download
+        #   wwdc_page_download = attempt_booklike_page_download(project_resource_fullpath)
+        # end
+
+        # if not booklike_page_download and not wwdc_page_download
+        #   __did_see_execution_errors = true
+        # end
+
+        _did_download = false
+
+        if scrape_success
+          downloaded_file_name = File.basename(URI.parse(sample_code_download_url).path) # MotionEffects.zip
+
+          sample_code_file = File.join(sample_code_project_home_daterev, downloaded_file_name)
+          sample_html_file = File.join(sample_code_project_home_daterev, 'page.html')
+
           # If  directory exits, but DATE is not that means we got update for known project project, yay!
           if File.exist?(sample_code_project_home)
-            @log.info 'Good news everyone! Project Update: ' + File.join(name, date, downloaded_file_name)
+            @log.info "Good news everyone! Project Update: #{sample_code_file}"
           else
-            @log.info 'Great news everyone! New Project: ' + File.join(name, date, downloaded_file_name)
+            @log.info "Great news everyone! New Project: #{sample_code_file}"
           end
 
           # Create home directories.
@@ -139,31 +176,30 @@ class ScrapingJoy
 
           # Dump the html that got us here, in case we with to recover the more details.
           # Use html page name here, becaues why the fuck not?! (Just kidding, html name is always present)
-          File.write(sample_html_file, b.html)
+          File.write(sample_html_file, html)
 
           if downloaded_file_name != (name + '.zip')
-            @log.warn 'Fuckers! Zip name: [' + downloaded_file_name + '] Project name: [' + name + ']'
+            @log.warn "Fuckers! Zip name: [#{downloaded_file_name}] Project name: [#{name}]"
           end
 
 
-          # If we are empty on the url, mostly because apple dropped the project..
-          if sample_code_download_url.to_s == ''
-            # Check to see if it's because apple have decided to remove the file
-            if (b.text.include? 'This document has been removed') || (b.text.include? 'This document has been retired')
-              @log.warn "Project #{name} has been removed."
-              FileUtils.touch(sample_code_project_home_daterev_deprecated)
-            else
-              @log.error "WTF!!! Can't scrape :( #{name}"
-              __did_see_execution_errors = true
-            end
+          _did_download = download(sample_code_download_url, sample_code_file)
+        end
+
+        # If we are empty on the url, mostly because apple dropped the project..
+        if not _did_download
+          # Check to see if it's because apple have decided to remove the file
+          if _is_deprecated
+            @log.warn "Project #{name} has been removed."
+            FileUtils.touch(sample_code_project_home_daterev_deprecated)
           else
-            download(sample_code_download_url, sample_code_file)
+            @log.error "WTF!!! Can't scrape :( #{name}"
+            __did_see_execution_errors = true
           end
         end
 
         #page = Nokogiri::HTML(b.html)
         #rel_url = source_code[9]
-
         # Finally close the browser.
         b.close
       end
@@ -183,7 +219,12 @@ end
 
 ##### Helpers
 def download(source, target)
-  open(target, 'wb') do |file|
-    file << open(source).read
+  if source.to_s == ''
+    return false
+  else 
+    open(target, 'wb') do |file|
+      file << open(source).read
+    end
+    return true
   end
 end
