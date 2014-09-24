@@ -46,7 +46,21 @@ class ScrapingJoy
     @log = Logger.new MultiDelegator.delegate(:write, :close).to(STDOUT, log_file)
   end
 
+  def build_watir_instance(sample_code_project_home_daterev)
+    profile = Selenium::WebDriver::Firefox::Profile.new
+    profile['browser.download.folderList'] = 2 # custom location
+    profile['browser.download.dir'] = sample_code_project_home_daterev
+    profile['browser.helperApps.neverAsk.saveToDisk'] = "text/csv,application/pdf,application/zip"
+
+    return Watir::Browser.new :firefox, :profile => profile
+  end
+
+  def kill_watir_instance(browser)
+    browser.close
+  end
+
   def attempt_booklike_page_download(browser)
+    _did_download = false
     _is_deprecated = false
 
     begin
@@ -62,7 +76,11 @@ class ScrapingJoy
         _is_deprecated = true
       end
 
-      return true, _is_deprecated, browser.html, sample_code_download_url
+      # We will try to go to the URL, and if no exception is thrown at us we will assume download was succesful?
+      browser.goto(sample_code_download_url)
+      _did_download = true
+
+      return _did_download, _is_deprecated, browser.html, sample_code_download_url 
     rescue Watir::Wait::TimeoutError
       @log.error 'Error while waiting for page load. Leaving the website open for debug.'
 
@@ -141,67 +159,64 @@ class ScrapingJoy
         # just stdout, no logging.
         puts "#{i.to_s}/#{source_code_documents.length} [#{name}](#{project_resource_fullpath})"
 
-        # Open the page once. Then attempt your best on pulling the download from that page.
-        b = Watir::Browser.new
-        b.goto(project_resource_fullpath)
+        # If  directory exits, but DATE is not that means we got update for known project project, yay!
+        if File.exist?(sample_code_project_home)
+          @log.info "Good news everyone! Project Update: #{sample_code_project_home}"
+        else
+          @log.info "Great news everyone! New Project: #{sample_code_project_home}"
+        end
 
-        scrape_success, _is_deprecated, html, sample_code_download_url = attempt_booklike_page_download(b)
+        # Create home directories.
+        FileUtils.mkdir_p sample_code_project_home_daterev
+
+        # Open the page once. Then attempt your best on pulling the download from that page.
+        b = build_watir_instance(sample_code_project_home_daterev)
+        b.goto(project_resource_fullpath)
+        _did_download, _is_deprecated, html, sample_code_download_url = attempt_booklike_page_download(b)
 
         # # Dick factor: From WWDC 2014 apple moved *some* of the projects to the https://developer.apple.com/wwdc/resources/sample-code/ page
-        # if not booklike_page_download
-        #   wwdc_page_download = attempt_booklike_page_download(project_resource_fullpath)
+        # if not scrape_success
+        #   scrape_success, html, sample_code_download_url, _did_download = attempt_booklike_page_download(b)
         # end
 
         # if not booklike_page_download and not wwdc_page_download
         #   __did_see_execution_errors = true
         # end
 
-        _did_download = false
+        # Dump the html that got us here, in case we wish to recover some more details.
+        sample_html_file = File.join(sample_code_project_home_daterev, 'page.html')
+        File.write(sample_html_file, html)
 
-        if scrape_success
+        # if scrape_success
+        #   if not _did_download
+        #     downloaded_file_name = File.basename(URI.parse(sample_code_download_url).path) # MotionEffects.zip
+        #     sample_code_file = File.join(sample_code_project_home_daterev, downloaded_file_name)
+        #   _did_download = download(sample_code_download_url, sample_code_file) if not _did_download
+        # end
+
+        # If we are empty on the url, mostly because apple dropped the project..
+        if _did_download
           downloaded_file_name = File.basename(URI.parse(sample_code_download_url).path) # MotionEffects.zip
-
-          sample_code_file = File.join(sample_code_project_home_daterev, downloaded_file_name)
-          sample_html_file = File.join(sample_code_project_home_daterev, 'page.html')
-
-          # If  directory exits, but DATE is not that means we got update for known project project, yay!
-          if File.exist?(sample_code_project_home)
-            @log.info "Good news everyone! Project Update: #{sample_code_file}"
-          else
-            @log.info "Great news everyone! New Project: #{sample_code_file}"
-          end
-
-          # Create home directories.
-          FileUtils.mkdir_p sample_code_project_home_daterev
-
-          # Dump the html that got us here, in case we with to recover the more details.
-          # Use html page name here, becaues why the fuck not?! (Just kidding, html name is always present)
-          File.write(sample_html_file, html)
-
           if downloaded_file_name != (name + '.zip')
             @log.warn "Fuckers! Zip name: [#{downloaded_file_name}] Project name: [#{name}]"
           end
 
-
-          _did_download = download(sample_code_download_url, sample_code_file)
-        end
-
-        # If we are empty on the url, mostly because apple dropped the project..
-        if not _did_download
+          # Finally close the browser.        
+          kill_watir_instance(b)
+        else
           # Check to see if it's because apple have decided to remove the file
           if _is_deprecated
+            # If so, mark it so that next time we won't try to download it again (We will fail. We know nothing.)
             @log.warn "Project #{name} has been removed."
             FileUtils.touch(sample_code_project_home_daterev_deprecated)
           else
-            @log.error "WTF!!! Can't scrape :( #{name}"
+            @log.error "WTF? Scrape mojo low! :( #{name}"
             __did_see_execution_errors = true
           end
         end
 
         #page = Nokogiri::HTML(b.html)
         #rel_url = source_code[9]
-        # Finally close the browser.
-        b.close
       end
     end
 
@@ -214,17 +229,5 @@ class ScrapingJoy
       File.write(@CACHE_FILE_NAME, json_feed_response)
     end
 
-  end
-end
-
-##### Helpers
-def download(source, target)
-  if source.to_s == ''
-    return false
-  else 
-    open(target, 'wb') do |file|
-      file << open(source).read
-    end
-    return true
   end
 end
