@@ -117,20 +117,27 @@ class ScrapingJoy
       @log.debug 'Super Fast Short Circuit. Exiting with love.'
       #log.debug "Search patterns\n#{signature_search_pattern}"
     else
-      runScrapeJobsFromFeed(json_feed_response)
+      # Need to scrape, do it like a madafaker.
+      parsed_feed = JSON.parse(json_feed_response)
+      source_code_documents = parsed_feed.select {|document| document[2] == 5 } # 5 is "name": "Sample Code",
+      __did_see_execution_errors = scrape_documents(source_code_documents)
+
+      # Cache the finished state of the scraping job, for next execution to be super efficient.
+      # Only mark as "did success" if not a single error was detected.
+      @CACHE_FILE_NAME = File.join(@LOCAL_CACHE_PATH, Time.now.utc.iso8601 + "-" + @md5 + ".json")
+      if __did_see_execution_errors
+        @log.debug "Will not mark #{@CACHE_FILE_NAME} as done, errors were detected during execution."
+      else
+        File.write(@CACHE_FILE_NAME, json_feed_response)
+      end
     end
 
     @log.debug 'Scraping Done.'
   end
 
-  def runScrapeJobsFromFeed(json_feed_response)
+  def scrape_documents(source_code_documents)
     __did_see_execution_errors = false
-    # Need to scrape, do it like a madafaker.
-    parsed = JSON.parse(json_feed_response)
 
-
-
-    source_code_documents = parsed["documents"].select {|document| document[2] == 5 } # 5 is "name": "Sample Code",
     source_code_documents.each_with_index do |source_code, i|
       name = source_code[0] # "Lister: A Productivity App Built in Swift"
       id = source_code[1] # "TP40014512"
@@ -150,7 +157,11 @@ class ScrapingJoy
       sample_code_project_home_daterev = File.join(sample_code_project_home, date)
       sample_code_project_home_daterev_deprecated = File.join(sample_code_project_home_daterev, '.deprecated')
 
-      project_resource_fullpath = "https://developer.apple.com/#{@LIBRARY}/#{@PLATFORM.downcase}/navigation/#{url}"
+      project_resource_fullpath = "https://developer.apple.com/#{@LIBRARY}/#{@PLATFORM.downcase}/navigation/#{ 
+
+
+
+      }"
   	  # Shortcircut, if the zip is there, we do not redownload it.
   	  # if the project is deprecated do not redownload as well.
       scraped = Dir[File.join(sample_code_project_home_daterev, '*.zip')].any? || Dir[sample_code_project_home_daterev_deprecated].any?
@@ -220,14 +231,6 @@ class ScrapingJoy
       end
     end
 
-    # Cache the finished state of the scraping job, for next execution to be super efficient.
-    # Only mark as "did success" if not a single error was detected.
-    @CACHE_FILE_NAME = File.join(@LOCAL_CACHE_PATH, Time.now.utc.iso8601 + "-" + @md5 + ".json")
-    if __did_see_execution_errors
-      @log.debug "Will not mark #{@CACHE_FILE_NAME} as done, errors were detected during execution."
-    else
-      File.write(@CACHE_FILE_NAME, json_feed_response)
-    end
-
+    return __did_see_execution_errors
   end
 end
