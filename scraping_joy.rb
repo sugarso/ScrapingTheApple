@@ -8,6 +8,7 @@ require 'watir-webdriver'
 require 'uri'
 require 'fileutils'
 require 'logger'
+require 'byebug'
 #require 'headless'
 
 #### SETUP LOGGING
@@ -30,13 +31,19 @@ class MultiDelegator
   end
 end
 
+#### HELP! I need somebody.
+def namesafe(input)
+  input.gsub!(/[^0-9A-Za-z.\-]/, '_')
+  return input
+end
+
 #### Init the main class...
 class ScrapingJoy
   def initialize(homedir, for_platform, prerelease = false)
     @PLATFORM = for_platform
     @HOME_PATH = File.join(homedir, @PLATFORM)
-    @LOCAL_CACHE_PATH = File.join(@HOME_PATH, '.weed')
     @LIBRARY = prerelease ? 'library/prerelease' : 'library'
+    @LOCAL_CACHE_PATH = File.join(@HOME_PATH, '.weed', namesafe(@LIBRARY))
     @CODE_SOURCE_FEED_URL = 'https://developer.apple.com/' + @LIBRARY + '/' + @PLATFORM.downcase + '/navigation/library.json'
 
     #### Make logging happen
@@ -120,11 +127,14 @@ class ScrapingJoy
       # Need to scrape, do it like a madafaker.
       parsed_feed = JSON.parse(json_feed_response)
       source_code_documents = parsed_feed.select {|document| document[2] == 5 } # 5 is "name": "Sample Code",
+
       __did_see_execution_errors = scrape_documents(source_code_documents)
 
       # Cache the finished state of the scraping job, for next execution to be super efficient.
       # Only mark as "did success" if not a single error was detected.
-      @CACHE_FILE_NAME = File.join(@LOCAL_CACHE_PATH, Time.now.utc.iso8601 + "-" + @md5 + ".json")
+      _filename = namesafe(Time.now.utc.iso8601 + "-" + @md5 + ".json")
+      @CACHE_FILE_NAME = File.join(@LOCAL_CACHE_PATH, _filename)
+      
       if __did_see_execution_errors
         @log.debug "Will not mark #{@CACHE_FILE_NAME} as done, errors were detected during execution."
       else
@@ -156,7 +166,7 @@ class ScrapingJoy
       sample_code_project_home = File.join(@HOME_PATH, name)
       sample_code_project_home_daterev = File.join(sample_code_project_home, date)
       sample_code_project_home_daterev_deprecated = File.join(sample_code_project_home_daterev, '.deprecated')
-
+      
       project_resource_fullpath = "https://developer.apple.com/#{@LIBRARY}/#{@PLATFORM.downcase}/navigation/#{ 
 
 
